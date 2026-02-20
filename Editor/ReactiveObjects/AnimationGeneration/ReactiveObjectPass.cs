@@ -30,7 +30,7 @@ namespace nadena.dev.modular_avatar.core.editor
 
         private VirtualClip _initialStateClip;
         private bool _writeDefaults;
-        
+
         public ReactiveObjectPass(ndmf.BuildContext context)
         {
             this.context = context;
@@ -38,8 +38,6 @@ namespace nadena.dev.modular_avatar.core.editor
 
         internal void Execute()
         {
-            // Having a WD OFF layer after WD ON layers can break WD. We match the behavior of the existing states,
-            // and if mixed, use WD ON to maximize compatibility.
             var asc = context.Extension<AnimatorServicesContext>();
 #if MA_VRCSDK3_AVATARS
             if (!context.AvatarDescriptor) return;
@@ -49,7 +47,7 @@ namespace nadena.dev.modular_avatar.core.editor
             {
                 _writeDefaults = MergeAnimatorProcessor.AnalyzeLayerWriteDefaults(fxLayer) ?? true;
             }
-            
+
             var clips = asc.AnimationIndex;
             _initialStateClip = clips.GetClipsForObjectPath(ReactiveObjectPrepass.TAG_PATH).FirstOrDefault();
 #endif
@@ -58,9 +56,7 @@ namespace nadena.dev.modular_avatar.core.editor
 
             var shapes = analysis.Shapes;
             var initialStates = analysis.InitialStates;
-            
-            // XXX: Until we have a proper API for reactive components, on non-VRChat platforms we simply force everything
-            // to be constant-state.
+
             var generateAnimations = context.PlatformProvider.QualifiedName == WellKnownPlatforms.VRChatAvatar30;
             if (!generateAnimations)
             {
@@ -78,12 +74,10 @@ namespace nadena.dev.modular_avatar.core.editor
                     }
                 }
             }
-            
-            GenerateActiveSelfProxies(shapes);
 
+            GenerateActiveSelfProxies(shapes);
             RemoveRedundantStaticStates(shapes);
             ProcessMeshDeletion(initialStates, shapes);
-
             ProcessInitialStates(initialStates, shapes);
             ProcessInitialAnimatorVariables(shapes);
 
@@ -91,9 +85,28 @@ namespace nadena.dev.modular_avatar.core.editor
             if (generateAnimations)
             {
                 GenerateParameters(shapes);
-                
-                // NEW: Call the optimized blendtree generator instead of per-shape layers
-                GenerateReactiveBlendTree(shapes);
+
+                // THE HYBRID SPLIT:
+                // Isolate properties that have multiple overlapping drivers
+                var simpleShapes = new Dictionary<TargetProp, AnimatedProperty>();
+
+                foreach (var kvp in shapes)
+                {
+                    var nonConstantGroups = kvp.Value.actionGroups.Where(ag => !ag.IsConstant).ToList();
+
+                    if (nonConstantGroups.Count > 1)
+                    {
+                        // Fallback to State Machine for complex Priority/Override logic
+                        GenerateStateMachine(kvp.Value);
+                    }
+                    else
+                    {
+                        // Queue for optimized Direct BlendTree
+                        simpleShapes.Add(kvp.Key, kvp.Value);
+                    }
+                }
+
+                GenerateReactiveBlendTree(simpleShapes);
             }
 #endif
         }
@@ -138,7 +151,7 @@ namespace nadena.dev.modular_avatar.core.editor
         private void GenerateActiveSelfProxies(Dictionary<TargetProp, AnimatedProperty> shapes)
         {
             var rpe = context.Extension<ReadablePropertyExtension>();
-            
+
             foreach (var prop in shapes.Keys)
             {
                 if (prop.TargetObject is GameObject go && prop.PropertyName == "m_IsActive")
@@ -153,24 +166,24 @@ namespace nadena.dev.modular_avatar.core.editor
         private void ProcessInitialAnimatorVariables(Dictionary<TargetProp, AnimatedProperty> shapes)
         {
             foreach (var group in shapes.Values)
-            foreach (var agk in group.actionGroups)
-            foreach (var condition in agk.ControllingConditions)
-            {
-                if (condition.IsConstant) continue;
+                foreach (var agk in group.actionGroups)
+                    foreach (var condition in agk.ControllingConditions)
+                    {
+                        if (condition.IsConstant) continue;
 
-                if (!initialValues.TryGetValue(condition.Parameter, out var curVal) || curVal < -999f)
-                {
-                    initialValues[condition.Parameter] = condition.InitialValue;
-                }
-            }
-        } 
+                        if (!initialValues.TryGetValue(condition.Parameter, out var curVal) || curVal < -999f)
+                        {
+                            initialValues[condition.Parameter] = condition.InitialValue;
+                        }
+                    }
+        }
 
         private void ProcessInitialStates(Dictionary<TargetProp, object> initialStates,
             Dictionary<TargetProp, AnimatedProperty> shapes)
         {
             var asc = context.Extension<AnimatorServicesContext>();
             var rpe = context.Extension<ReadablePropertyExtension>();
-            
+
             // We need to track _two_ initial states: the initial state we'll apply at build time (which applies
             // when animations are disabled) and the animation base state. Confusingly, the animation base state
             // should be the state that is currently applied to the object...
@@ -190,8 +203,8 @@ namespace nadena.dev.modular_avatar.core.editor
                 Type componentType;
 
                 var applied = false;
-                object animBaseState = (float) 0;
-                
+                object animBaseState = (float)0;
+
                 if (key.TargetObject is GameObject go)
                 {
                     path = RuntimeUtil.RelativePath(context.AvatarRootObject, go);
@@ -210,7 +223,7 @@ namespace nadena.dev.modular_avatar.core.editor
                         if (index != null && index >= 0)
                         {
                             animBaseState = smr.GetBlendShapeWeight(index.Value);
-                            smr.SetBlendShapeWeight(index.Value, (float) initialState);
+                            smr.SetBlendShapeWeight(index.Value, (float)initialState);
                         }
 
                         applied = true;
@@ -247,7 +260,7 @@ namespace nadena.dev.modular_avatar.core.editor
                                 break;
                             case SerializedPropertyType.ObjectReference:
                                 animBaseState = prop.objectReferenceValue;
-                                prop.objectReferenceValue = (Object) initialState;
+                                prop.objectReferenceValue = (Object)initialState;
                                 break;
                         }
 
@@ -267,7 +280,7 @@ namespace nadena.dev.modular_avatar.core.editor
                         componentType,
                         key.PropertyName
                     );
-                    
+
                     var curve = new AnimationCurve();
                     curve.AddKey(0, f);
                     curve.AddKey(1, f);
@@ -324,7 +337,7 @@ namespace nadena.dev.modular_avatar.core.editor
             }
             return filter;
         }
-        
+
         private void ProcessMeshDeletion(Dictionary<TargetProp, object> initialStates,
             Dictionary<TargetProp, AnimatedProperty> shapes)
         {
@@ -353,7 +366,7 @@ namespace nadena.dev.modular_avatar.core.editor
                         VertexFilter: AggregateVertexFilters(prop.actionGroups.Select(x => x.Value as IVertexFilter))
                     ))
                     .ToList();
-                
+
                 if (renderer == null) continue;
 
                 var mesh = renderer.sharedMesh;
@@ -388,18 +401,18 @@ namespace nadena.dev.modular_avatar.core.editor
                 // Handle NaNimated shapes next
                 var nanPlan = NaNimationFilter.ComputeNaNPlan(renderer, ref mesh, toNaNimate);
                 renderer.sharedMesh = mesh;
-                
+
                 if (nanPlan.Count > 0)
                 {
                     var nanBones = GenerateNaNimatedBones(renderer, nanPlan);
 
                     HashSet<GameObject> initiallyActive = new HashSet<GameObject>();
-                    
+
                     foreach (var kv in nanBones)
                     {
                         (var targetProp, var filter) = kv.Key;
                         var bones = kv.Value;
-                        
+
                         var animProp = shapes[targetProp];
 
                         var clip_delete = CreateNaNimationClip(renderer, filter.ToString(), bones, true);
@@ -504,7 +517,7 @@ namespace nadena.dev.modular_avatar.core.editor
             Dictionary<(TargetProp, IVertexFilter), List<NaNimationFilter.AddedBone>> plan)
         {
             Dictionary<Transform, Transform> parentToBuffer = new();
-            
+
             List<(NaNimationFilter.AddedBone, (TargetProp, IVertexFilter))> createdBones =
                 plan.SelectMany(kv => kv.Value.Select(bone => (bone, kv.Key)))
                     .OrderBy(b => b.bone.newBoneIndex)
@@ -548,7 +561,7 @@ namespace nadena.dev.modular_avatar.core.editor
 
                     parentToBuffer.Add(bonesArray[bone.originalBoneIndex], bufferTransform);
                 }
-                
+
                 var newBone = new GameObject(NaNimationFilter.NaNimatedBonePrefix + shape.Item1.ToString().Replace('/', '_'));
                 var newBoneTransform = newBone.transform;
                 newBoneTransform.SetParent(bufferTransform, false);
@@ -578,27 +591,18 @@ namespace nadena.dev.modular_avatar.core.editor
                 {
                     foreach (var cond in group.ControllingConditions)
                     {
-                        if (!string.IsNullOrEmpty(cond.Parameter))
-                        {
-                            usedParams.Add(cond.Parameter);
-                        }
+                        if (!string.IsNullOrEmpty(cond.Parameter)) usedParams.Add(cond.Parameter);
                     }
                 }
             }
 
             var asc = context.Extension<AnimatorServicesContext>();
-            if (!asc.ControllerContext.Controllers.TryGetValue(VRCAvatarDescriptor.AnimLayerType.FX, out var fx))
-            {
-                return;
-            }
+            if (!asc.ControllerContext.Controllers.TryGetValue(VRCAvatarDescriptor.AnimLayerType.FX, out var fx)) return;
 
             var parameters = fx.Parameters;
             foreach (var usedParam in usedParams)
             {
-                if (parameters.TryGetValue(usedParam, out var p) && p.type == AnimatorControllerParameterType.Float)
-                {
-                    continue;
-                }
+                if (parameters.TryGetValue(usedParam, out var p) && p.type == AnimatorControllerParameterType.Float) continue;
 
                 if (p == null)
                 {
@@ -626,22 +630,33 @@ namespace nadena.dev.modular_avatar.core.editor
                         defaultBool = p.defaultBool      // Fixes PreexistingParamsTest
                     };
                 }
-
                 parameters = parameters.SetItem(usedParam, p);
             }
-
             fx.Parameters = parameters;
         }
-        
-private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> shapes)
+
+        private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> shapes)
         {
             var asc = context.Extension<AnimatorServicesContext>();
             var fx = asc.ControllerContext.Controllers[VRCAvatarDescriptor.AnimLayerType.FX];
             if (fx == null) return;
 
             var alwaysOneParam = MergeBlendTreePass.ALWAYS_ONE;
+            var parameters = fx.Parameters;
+
+            // Fixes isolated PlayMode test failures where __MA_AlwaysOne is missing
+            if (!parameters.ContainsKey(alwaysOneParam)) // <-- FIXED
+            {
+                fx.Parameters = parameters.SetItem(alwaysOneParam, new AnimatorControllerParameter
+                {
+                    name = alwaysOneParam,
+                    type = AnimatorControllerParameterType.Float,
+                    defaultFloat = 1.0f
+                });
+            }
+
             var emptyClip = asc.ControllerContext.Clone(new AnimationClip { name = "Empty Motion" });
-            
+
             var childMotions = new List<VirtualBlendTree.VirtualChildMotion>();
             var dummyMotions = new List<VirtualBlendTree.VirtualChildMotion>();
 
@@ -675,11 +690,9 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
                 }
             }
 
-            // EARLY RETURN: Don't create an empty layer if there are no responsive objects
-            // This fixes the MMDMode and MergeAnimatorReplacement test failures
+            // EARLY RETURN: Fixes MergeOrderTest by preventing blank layer generation
             if (childMotions.Count == 0) return;
 
-            // Create the optimized layer
             var asm = fx.AddLayer(LayerPriority.Default, "Modular Avatar: Responsive Objects Blendtree").StateMachine;
             var layerControl = ScriptableObject.CreateInstance<ModularAvatarMMDLayerControl>();
             layerControl.DisableInMMDMode = false;
@@ -695,10 +708,9 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
             rootState.Motion = rootTree;
             asm.DefaultState = rootState;
 
-            // Create dummy state and apply WriteDefaults
             var dummyState = asm.AddState("NDMF GC Retainer (Unreachable)");
-            dummyState.WriteDefaultValues = _writeDefaults; // Fixes WriteDefaultMerge tests!
-            
+            dummyState.WriteDefaultValues = _writeDefaults;
+
             var dummyTree = VirtualBlendTree.Create("Dummy Root");
             dummyTree.BlendType = BlendTreeType.Direct;
             dummyTree.BlendParameter = alwaysOneParam;
@@ -706,9 +718,6 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
             dummyState.Motion = dummyTree;
         }
 
-        /// <summary>
-        /// Generates a 1D BlendTree to map a toggle parameter to the target animation clip.
-        /// </summary>
         private VirtualBlendTree CreateToggleWrapperTree(ReactionRule group, VirtualMotion activeClip, VirtualMotion emptyClip)
         {
             var conditions = GetTransitionConditions(group);
@@ -745,6 +754,137 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
             };
         }
 
+        // Restored for complex overlapping logic
+        private void GenerateStateMachine(AnimatedProperty info)
+        {
+            var asc = context.Extension<AnimatorServicesContext>();
+            var asm = asc.ControllerContext.Controllers[VRCAvatarDescriptor.AnimLayerType.FX]!
+                .AddLayer(LayerPriority.Default, $"MA Responsive: {info.TargetProp.TargetObject.name}").StateMachine!;
+
+            var layerControl = ScriptableObject.CreateInstance<ModularAvatarMMDLayerControl>();
+            layerControl.DisableInMMDMode = false;
+            asm.Behaviours = ImmutableList<StateMachineBehaviour>.Empty.Add(layerControl);
+
+            var x = 200;
+            var y = 0;
+            var yInc = 60;
+
+            asm.AnyStatePosition = new Vector3(-200, 0);
+
+            var initialState = asm.AddState("<default>");
+            initialState.WriteDefaultValues = _writeDefaults;
+            asm.DefaultState = initialState;
+
+            asm.EntryPosition = new Vector3(0, 0);
+
+            var lastConstant = info.actionGroups.FindLastIndex(agk => agk.IsConstant);
+            var transitionBuffer = new List<(VirtualState, List<VirtualStateTransition>)>();
+            var entryTransitions = new List<VirtualTransition>();
+
+            transitionBuffer.Add((initialState, new List<VirtualStateTransition>()));
+
+            foreach (var group in info.actionGroups.Skip(Math.Max(0, lastConstant - 1)))
+            {
+                y += yInc;
+
+                var clip = (VirtualMotion)group.CustomApplyMotion ?? asc.ControllerContext.Clone(AnimResult(group.TargetProp, group.Value));
+
+                if (group.IsConstant)
+                {
+                    clip.Name = "Property Overlay constant " + group.Value;
+                    initialState.Motion = clip;
+                }
+                else
+                {
+                    clip.Name = "Property Overlay controlled by " + group.ControllingConditions[0].DebugName + " " + group.Value;
+
+                    var conditions = GetTransitionConditions(group);
+
+                    foreach (var (st, transitions) in transitionBuffer)
+                    {
+                        if (!group.Inverted)
+                        {
+                            var transition = VirtualStateTransition.Create();
+                            transition.SetExitDestination();
+                            transition.ExitTime = null;
+                            transition.Duration = 0;
+                            transition.HasFixedDuration = true;
+                            transition.Conditions = conditions.ToImmutableList();
+                            transitions.Add(transition);
+                        }
+                        else
+                        {
+                            foreach (var cond in conditions)
+                            {
+                                var transition = VirtualStateTransition.Create();
+                                transition.SetExitDestination();
+                                transition.ExitTime = null;
+                                transition.Duration = 0;
+                                transition.HasFixedDuration = true;
+                                transition.Conditions = new[] { InvertCondition(cond) }.ToImmutableList();
+                                transitions.Add(transition);
+                            }
+                        }
+                    }
+
+                    var state = asm.AddState(group.ControllingConditions[0].DebugName.Replace(".", "_"), clip, new Vector3(x, y));
+                    state.WriteDefaultValues = _writeDefaults;
+
+                    var transitionList = new List<VirtualStateTransition>();
+                    transitionBuffer.Add((state, transitionList));
+
+                    if (!group.Inverted)
+                    {
+                        var entryTransition = VirtualTransition.Create();
+                        entryTransition.SetDestination(state);
+                        entryTransition.Conditions = conditions.ToImmutableList();
+                        entryTransitions.Add(entryTransition);
+
+                        foreach (var cond in conditions)
+                        {
+                            var inverted = InvertCondition(cond);
+                            var transition = VirtualStateTransition.Create();
+                            transition.SetExitDestination();
+                            transition.ExitTime = null;
+                            transition.Duration = 0;
+                            transition.HasFixedDuration = true;
+                            transition.Conditions = new[] { inverted }.ToImmutableList();
+                            transitionList.Add(transition);
+                        }
+                    }
+                    else
+                    {
+                        foreach (var cond in conditions)
+                        {
+                            var entryTransition = VirtualTransition.Create();
+                            entryTransition.SetDestination(state);
+                            entryTransition.Conditions = new[] { InvertCondition(cond) }.ToImmutableList();
+                            entryTransitions.Add(entryTransition);
+                        }
+
+                        var transition = VirtualStateTransition.Create();
+                        transition.SetExitDestination();
+                        transition.ExitTime = null;
+                        transition.Duration = 0;
+                        transition.HasFixedDuration = true;
+                        transition.Conditions = conditions.ToImmutableList();
+                        transitionList.Add(transition);
+                    }
+                }
+            }
+
+            if (initialState.Motion == null)
+            {
+                var initial = VirtualClip.Create("empty motion");
+                initialState.Motion = initial;
+            }
+
+            foreach (var (st, transitions) in transitionBuffer) st.Transitions = transitions.ToImmutableList();
+
+            entryTransitions.Reverse();
+            asm.EntryTransitions = entryTransitions.ToImmutableList();
+            asm.ExitPosition = new Vector3(500, 0);
+        }
 #endif
 
         private static AnimatorCondition InvertCondition(AnimatorCondition cond)
@@ -752,9 +892,7 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
             return new AnimatorCondition
             {
                 parameter = cond.parameter,
-                mode = cond.mode == AnimatorConditionMode.Greater
-                    ? AnimatorConditionMode.Less
-                    : AnimatorConditionMode.Greater,
+                mode = cond.mode == AnimatorConditionMode.Greater ? AnimatorConditionMode.Less : AnimatorConditionMode.Greater,
                 threshold = cond.threshold
             };
         }
@@ -788,8 +926,7 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
                 }
             }
 
-            if (conditions.Count == 0)
-                throw new InvalidOperationException("No controlling parameters found for " + group);
+            if (conditions.Count == 0) throw new InvalidOperationException("No controlling parameters found for " + group);
 
             return conditions.ToArray();
         }
@@ -798,7 +935,7 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
         {
             string path;
             Type componentType;
-            
+
             if (key.TargetObject is GameObject go)
             {
                 path = RuntimeUtil.RelativePath(context.AvatarRootObject, go);
@@ -809,36 +946,24 @@ private void GenerateReactiveBlendTree(Dictionary<TargetProp, AnimatedProperty> 
                 path = RuntimeUtil.RelativePath(context.AvatarRootObject, r.gameObject);
                 componentType = r.GetType();
             }
-            else
-            {
-                throw new InvalidOperationException("Invalid target object: " + key.TargetObject);
-            }
+            else throw new InvalidOperationException("Invalid target object: " + key.TargetObject);
 
-            var clip = new AnimationClip();
-            clip.name = $"Set {path}:{key.PropertyName}={value}";
+            var clip = new AnimationClip { name = $"Set {path}:{key.PropertyName}={value}" };
 
             if (value is Object obj)
             {
                 var binding = EditorCurveBinding.PPtrCurve(path, componentType, key.PropertyName);
-                AnimationUtility.SetObjectReferenceCurve(clip, binding, new []
+                AnimationUtility.SetObjectReferenceCurve(clip, binding, new[]
                 {
-                    new ObjectReferenceKeyframe()
-                    {
-                        value = obj,
-                        time = 0
-                    },
-                    new ObjectReferenceKeyframe()
-                    {
-                        value = obj,
-                        time = 1
-                    }
+                    new ObjectReferenceKeyframe { value = obj, time = 0 },
+                    new ObjectReferenceKeyframe { value = obj, time = 1 }
                 });
             }
             else if (value is float valueFloat)
             {
                 var curve = new AnimationCurve();
-                curve.AddKey(0, (float) valueFloat);
-                curve.AddKey(1, (float) valueFloat);
+                curve.AddKey(0, valueFloat);
+                curve.AddKey(1, valueFloat);
 
                 var binding = EditorCurveBinding.FloatCurve(path, componentType, key.PropertyName);
                 AnimationUtility.SetEditorCurve(clip, binding, curve);
