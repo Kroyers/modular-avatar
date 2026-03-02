@@ -86,6 +86,7 @@ namespace nadena.dev.modular_avatar.core.editor
             {
                 GenerateParameters(shapes);
 
+                // Send all shapes through the optimized Direct BlendTree generator
                 GenerateReactiveBlendTree(shapes);
             }
 #endif
@@ -714,7 +715,7 @@ namespace nadena.dev.modular_avatar.core.editor
             dummyState.Motion = dummyTree;
         }
 
-                /// Recursively builds a chain of 1D Blend Trees to act as a Boolean AND circuit. Routes to 'trueMotion' if all conditions are met, otherwise falls back to 'falseMotion'.
+        /// Recursively builds a chain of 1D Blend Trees to act as a Boolean AND circuit. Routes to 'trueMotion' if all conditions are met, otherwise falls back to 'falseMotion'.
         private VirtualMotion BuildPriorityChain(List<ControlCondition> conditions, int conditionIndex, VirtualMotion trueMotion, VirtualMotion falseMotion)
         {
             // Skip constant conditions (for example static ActiveSelf states)
@@ -750,7 +751,7 @@ namespace nadena.dev.modular_avatar.core.editor
             return wrapperTree;
         }
 
-                /// Unity breaks if the same BlendTree node is referenced multiple times. This creates a deep copy of a BlendTree to ensure unique references, 
+        /// Unity breaks if the same BlendTree node is referenced multiple times. This creates a deep copy of a BlendTree to ensure unique references, 
         private VirtualMotion DeepCloneMotion(VirtualMotion original)
         {
             // Animation clips are safe to reuse, so we just return them directly
@@ -776,7 +777,6 @@ namespace nadena.dev.modular_avatar.core.editor
 
             return original;
         }
-
 
         private VirtualBlendTree.VirtualChildMotion CreateDirectChildMotion(VirtualMotion motion, string directParameter)
         {
