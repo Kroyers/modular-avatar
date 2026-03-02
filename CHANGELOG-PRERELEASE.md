@@ -12,9 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Changed
-- [#1929] Refactored ReactiveObjectPass to consolidate animation generation.
-  Replaced ProcessShapeKey and GenerateStateMachine with a unified Direct BlendTree generator (GenerateReactiveBlendTree, CreateToggleWrapperTree, CreateDirectChildMotion),
-  eliminating redundant Animator Layers and improving performance.
+- [#1929] Optimized reactive object animations by combining them into a single Direct Blend Tree. 
+  This drastically reduces the number of Animator Layers generated, improving overall avatar performance while preserving complex toggle priority logic.
 
 ### Removed
 
