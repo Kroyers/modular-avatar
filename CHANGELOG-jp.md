@@ -9,9 +9,12 @@ Modular Avatarの主な変更点をこのファイルで記録しています。
 ## [Unreleased]
 
 ### Added
+- [#1932] Expressions Menuのインスペクターが固まるVRCSDKのバグを迂回
 - [#1924] メニュー描画時間に時間制限を設けた（一時的なデバッグ処置です）
 
 ### Fixed
+- [#1936] インスペクターGUIでの `EditorGUI.showMixedValue` が使用後にリセットされない問題を修正しました（他のエディタ拡張に影響を与える可能性がありました）
+- [#1926] 日本語版FAQページの改訂
 - [#1921] `MA Merge Blend Tree` で非定数のカーブが含まれるクリップを検出する際の誤検出を修正
 
 ### Changed
