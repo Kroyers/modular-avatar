@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Fixed
+- [#1936] インスペクターGUIでの `EditorGUI.showMixedValue` が使用後にリセットされない問題を修正しました（他のエディタ拡張に影響を与える可能性がありました）
 
 ### Changed
 - [#1929] リアクティブオブジェクトのアニメーションを単一のDirect Blend Treeに統合することで最適化しました。
@@ -20,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 ### Deprecated
+
+## [1.16.3-alpha.1] - [2026-02-23]
+
+### Added
+- [#1932] Expressions Menuのインスペクターが固まるVRCSDKのバグを迂回
+
+### Fixed
+- [#1926] 日本語版FAQページの改訂
 
 ## [1.16.3-alpha.0] - [2026-02-13]
 

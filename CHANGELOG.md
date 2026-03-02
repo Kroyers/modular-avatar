@@ -11,9 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- [#1932] Patched a VRCSDK bug which caused the expressions menu editor to hang
 - [#1924] Added a watchdog to limit time spent in menu GUI rendering to help diagnose an issue
 
 ### Fixed
+- [#1936] Fixed `EditorGUI.showMixedValue` not being reset after use in inspector GUIs, which could affect other editor extensions
+- [#1926] Revisions to the Japanese FAQ page
 - [#1921] Fixed additional false positives in the non-constant curve check
 
 ### Changed
