@@ -144,6 +144,8 @@ jobs:
         env:
           # meh, just a personal license...
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_USER }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASS }}
         with:
           testMode: ${{ matrix.testmode }}
           unityVersion: ${{ steps.configure.outputs.unity_version }}
